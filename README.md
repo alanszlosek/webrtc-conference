@@ -1,6 +1,8 @@
 # WebRTC Conference
 
-A self-hosted WebRTC video conference webapp.
+Very much a work in progress.
+
+This is a self-hosted WebRTC video conference webapp.
 
 Adapted from MDN's example code: https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Signaling_and_video_calling
 
