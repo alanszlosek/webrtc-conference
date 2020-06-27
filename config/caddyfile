@@ -1,0 +1,11 @@
+# Note this is serving the app at https://yourdomain.com/conference/
+yourdomain.com/conference {
+    root /var/www/webrtc-conference/public
+
+    timeouts 2h
+    # point to you node app's listening port
+    proxy /ws localhost:10008 {
+        websocket
+        transparent
+    }
+}
