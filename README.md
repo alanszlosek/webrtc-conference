@@ -18,3 +18,15 @@ Adapted from MDN's example code: https://developer.mozilla.org/en-US/docs/Web/AP
 * Tested with node 10.x
 * npm install websocket
 * Update public/index.html with the domain of your TURN server
+
+## Missing Functionality
+
+* Ability to change audio/video device while on call
+* Remember chosen devices in localStorage
+* Detect when media devices come and go (updating dropdowns accordingly)
+* Audio and Video mute
+* Ability to change username
+* Text chat
+* Screen sharing
+* Ability to join call without a camera
+* Graceful handling of server disconnects and generate peer-connection flakiness
