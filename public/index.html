@@ -421,7 +421,7 @@ var createPeerConnection = function(source, target, username) {
             var config = {
                 iceServers: [     // Information about ICE servers - Use your own!
                     {
-                        urls: 'turn:23.239.25.131:3478', //server.hostname, // A TURN server
+                        urls: 'turn:' + server.hostname, // A TURN server
                         username: "webrtc",
                         credential: "szlosek",
                         credentialType: 'password'
@@ -623,6 +623,8 @@ var createPeerConnection = function(source, target, username) {
                     type: "video-offer",
                     sdp: offer 
                 });
+
+                self.pendingNegotiation = false;
             } catch(err) {
                 self.log('Negotation error: ');
                 self.log(err);
