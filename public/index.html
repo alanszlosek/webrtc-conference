@@ -188,8 +188,8 @@ var grid = {
                     newUser.deferNegotiationOnce = true;
                     // newUser.addTracks();
                 } else {
-		   newUser.addTracks();
-		}
+           newUser.addTracks();
+        }
             }
         }
     }
@@ -479,6 +479,11 @@ var createPeerConnection = function(source, target, username) {
             myPeerConnection.onsignalingstatechange = function(event) {
                 self.log('Signaling state changed to ' + self.connection.signalingState);
                 switch(self.connection.signalingState) {
+                    case "stable":
+                        if (self.pendingNegotiation) {
+                            self.handleNegotiation();
+                        }
+                        break;
                     case "closed":
                         self.close();
                         break;
@@ -487,62 +492,8 @@ var createPeerConnection = function(source, target, username) {
             
             // Called by the WebRTC layer to let us know when it's time to
             // begin, resume, or restart ICE negotiation.
-            myPeerConnection.onnegotiationneeded = async function () {
-                self.log('Negotiation needed');
-
-		/*
-                if (self.deferNegotiationOnce) {
-                    self.log('New conn. Deferring negotiation once.');
-                    self.deferNegotiationOnce = false;
-                    return;
-                }
-		*/
-
-                if (!self.canNegotiate()) {
-                    self.log('Bailing on new negotiation');
-                    return;
-                }
-
-	            try {
-                    // If the connection hasn't yet achieved the "stable" state,
-                    // return to the caller. Another negotiationneeded event
-                    // will be fired when the state stabilizes.
-                    if (self.connection.signalingState != "stable") {
-                        self.log('Not stable yet, postponing ...');
-                        return;
-                    }
-
-/*
-                    // Skip if we're in a pending state from a remote offer
-                    if (self.connection.pendingRemoteDescription) {
-                        console.log('Connection with ' + self.target + '. Already in the middle of remote-initiated negotation. Doing nothing for now.');
-                        return;
-                    }
-*/
-
-                    // Moved this from above stable check above
-                    self.log('Creating offer.');
-                    const offer = await self.connection.createOffer();
-
-                    // Establish the offer as the local peer's current
-                    // description.
-
-                    self.log('Setting local description to the offer');
-                    await self.connection.setLocalDescription(offer);
-
-                    // Send the offer to the remote peer.
-
-                    self.log('Sending offer.');
-                    server.send({
-                        source: server.clientID,
-                        target: self.target,
-                        type: "video-offer",
-                        sdp: offer 
-                    });
-                } catch(err) {
-                    self.log('Negotation error: ');
-                    self.log(err);
-                };
+            myPeerConnection.onnegotiationneeded = function () {
+                self.handleNegotiation();
             };
 
             // Called by the WebRTC layer when events occur on the media tracks
@@ -612,8 +563,8 @@ var createPeerConnection = function(source, target, username) {
 
                 // Stop all transceivers on the connection
                 myPeerConnection.getTransceivers().forEach(function(t) {
-                    // TODO: graceful error handling?
-                    t.stop();
+                    // Chrome doesn't have stop()
+                    if (t.stop) t.stop();
                 });
             }
 
@@ -631,6 +582,51 @@ var createPeerConnection = function(source, target, username) {
             // Close the peer connection
             myPeerConnection.close();
             self.closed = true;
+        },
+
+        handleNegotiation: async function() {
+            var self = this;
+            self.log('Negotiation needed');
+
+            if (!self.canNegotiate()) {
+                self.log('Queueing up negotiation');
+                self.pendingNegotiation = true;
+                return;
+            }
+
+            try {
+                // TODO: this is old, handled above with canNegotiate
+                // If the connection hasn't yet achieved the "stable" state,
+                // return to the caller. Another negotiationneeded event
+                // will be fired when the state stabilizes.
+                if (self.connection.signalingState != "stable") {
+                    self.log('Not stable yet, postponing ...');
+                    return;
+                }
+
+                // Moved this from above stable check above
+                self.log('Creating offer.');
+                const offer = await self.connection.createOffer();
+
+                // Establish the offer as the local peer's current
+                // description.
+
+                self.log('Setting local description to the offer');
+                await self.connection.setLocalDescription(offer);
+
+                // Send the offer to the remote peer.
+
+                self.log('Sending offer.');
+                server.send({
+                    source: server.clientID,
+                    target: self.target,
+                    type: "video-offer",
+                    sdp: offer 
+                });
+            } catch(err) {
+                self.log('Negotation error: ');
+                self.log(err);
+            };
         },
 
         // TODO: rename this. it's confusing
@@ -707,7 +703,7 @@ var createPeerConnection = function(source, target, username) {
         },
 
         log: function(msg) {
-		var self = this;
+            var self = this;
             console.log('Connection with ' + self.target + '. ' + msg);
         },
 
@@ -795,5 +791,6 @@ var createPeerConnection = function(source, target, username) {
 </script>
 </body>
 </html>
+
 
 
