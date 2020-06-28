@@ -8,7 +8,7 @@ Adapted from MDN's example code: https://developer.mozilla.org/en-US/docs/Web/AP
 
 ## Requirements
 
-* Firefox - Calling currently only works between Firefox browsers. Tested between MacOSX and PopOS Linux
+* Firefox and/or Chrome - It's most stable between Firefox browsers currently, but does occasionally work between Firefox and Chrome. I suspect race conditions (which I'm trying to address with state checking). Tested between MacOSX and PopOS Linux
 * Server with: coturn, node.js, HTTP server capable of WebSockets
 
 ## Installation
