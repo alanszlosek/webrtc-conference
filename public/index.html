@@ -12,7 +12,7 @@ html, body, div,img {
 #nav {
     background-color: #7cafc2;
     display: grid;
-    grid-template-columns: auto auto auto;
+    grid-template-columns: auto auto auto auto auto;
 }
 #nav > div {
     border-bottom: 3px solid #7cafc2;
@@ -24,7 +24,23 @@ html, body, div,img {
 #nav > div.success {
     border-color: #f8f8f8;
 }
+
+/*
+#grid.one {
+    grid-template-columns: auto;
+}
+#grid.two {
+    grid-template-columns: auto auto;
+}
+#grid.four {
+    grid-template-columns: auto auto;
+}
+#grid.nine {
+    grid-template-columns: auto auto;
+}
+*/
 </style>
+<script src="config.js"></script>
 <!--
 <script src="adapter.js"></script>
 -->
@@ -35,9 +51,23 @@ html, body, div,img {
     <div><input id="username" placeholder="nickname" /></div>
     <select id="audioinput"><option>Audio</option></select>
     <select id="videoinput"><option>Cameras</option></select>
+    <select id="videoquality">
+        <option>Video Quality</option>
+        <option value="240" selected>240p</option>
+        <option value="360">360p</option>
+        <option value="480">480p</option>
+        <option value="720">720p</option>
+        <option value="1080">1080p</option>
+    </select>
+    <select id="framerate">
+        <option>Frames Per Second</option>
+        <option value="10" selected>10fps</option>
+        <option value="20">20fps</option>
+        <option value="30">30fps</option>
+    </select>
 </div>
 
-<div id="grid" class="main" style="display: grid; grid-template-columns: auto auto auto;"></div>
+<div id="grid" class="main" style="display: grid;grid-template-columns: auto;"></div>
 
 <script>
 var ajaxGet = function(url, callback) {
@@ -116,17 +146,17 @@ var drawChildren = function(container, children) {
 var mediaConstraints = {
     audio: true,            // We want an audio track
     video: {
-        aspectRatio: {
-            ideal: 1.333333     // 3:2 aspect is preferred
-        }
+        height: { min: 240, ideal: 240, max: 720 },
+        frameRate: { min: 2, ideal: 10, max: 30 }
     }
 };
-
 
 var handles = {
     username: document.getElementById('username'),
     audioinput: document.getElementById('audioinput'),
-    videoinput: document.getElementById('videoinput')
+    videoinput: document.getElementById('videoinput'),
+    videoquality: document.getElementById('videoquality'),
+    framerate: document.getElementById('framerate')
 };
 
 handles.username.addEventListener('change', function(e) {
@@ -138,6 +168,28 @@ handles.username.addEventListener('change', function(e) {
         username: username
     });
     console.log(e.target.value);
+});
+handles.videoquality.addEventListener('change', function(e) {
+    var value = e.target.value;
+    if (!value) return;
+
+    server.stream.getTracks().forEach(function(track) {
+        console.log(track);
+        if (track.kind == 'video') {
+            track.applyConstraints({height: value});
+        }
+    });
+});
+handles.framerate.addEventListener('change', function(e) {
+    var value = e.target.value;
+    if (!value) return;
+
+    server.stream.getTracks().forEach(function(track) {
+        console.log(track);
+        if (track.kind == 'video') {
+            track.applyConstraints({framerate: value});
+        }
+    });
 });
 
 var nav = {
@@ -161,6 +213,7 @@ var grid = {
     },
 
     users: function(currentUsers) {
+        var self = this;
         // loop over users in list
         // if user guid is not already in peers, add it and open peer connection to it
         // loop over current peers
@@ -176,6 +229,11 @@ var grid = {
             }
         }
         for (var id in currentUsers) {
+            // skip self
+            if (id == server.clientID) {
+                console.log('skipping self');
+                continue;
+            }
             if (!(id in users)) {
                 var user = currentUsers[id];
                 var newUser = createPeerConnection(server.myId, id, user.username);
@@ -188,9 +246,17 @@ var grid = {
                     newUser.deferNegotiationOnce = true;
                     // newUser.addTracks();
                 } else {
-           newUser.addTracks();
-        }
+                    newUser.addTracks();
+                }
             }
+        }
+        var numUsers = Object.keys(currentUsers).length;
+        if (numUsers > 4) {
+            self.handles.container.style['gridTemplateColumns'] = 'auto auto';
+        } else if (numUsers > 1) {
+            self.handles.container.style['gridTemplateColumns'] = 'auto auto';
+        } else {
+            self.handles.container.style['gridTemplateColumns'] = 'auto';
         }
     }
 }
@@ -233,7 +299,7 @@ modules.forEach(function(self) {
 
 
 var server = {
-    hostname: 'yourdomain.com',
+    hostname: config.hostname,
 
     connection: null,
     clientID: null,
@@ -258,7 +324,7 @@ var server = {
                     server.clientID = msg.id;
                     server.clientUsername = msg.username;
 
-                    var videoTag = server.videoTag = tag('video', {width:'100%'}, []);
+                    var videoTag = server.videoTag = tag('video', {}, []);
                     var a = tag(
                         'div',
                         {},
@@ -271,10 +337,16 @@ var server = {
                     users[server.clientID] = {
                         container: a
                     };
+                    console.log(navigator.mediaDevices.getSupportedConstraints());
 
                     navigator.mediaDevices.getUserMedia(mediaConstraints).then(function(stream) {
                         // keep handle to our video/camera stream
                         self.stream = stream;
+                        stream.getTracks().forEach(function(track) {
+                            if (track.getCapabilities) console.log(track.getCapabilities());
+                            // Prints constraints currently in use
+                            //console.log(track.getConstraints());
+                        });
                         videoTag.srcObject = new MediaStream(stream.getVideoTracks());
                         videoTag.onloadedmetadata = function() {
                             videoTag.play();
@@ -395,7 +467,7 @@ var createPeerConnection = function(source, target, username) {
         deferNegotiationOnce: false,
         init: function() {
             var self = this;
-            var videoTag = tag('video', {width:'100%'}, []);
+            var videoTag = tag('video', {}, []);
             var a = tag(
                 'div',
                 {},
@@ -418,17 +490,17 @@ var createPeerConnection = function(source, target, username) {
             self.container = a;
 
             console.log('Preparing connection to ' + self.target);
-            var config = {
+            var rtcConfig = {
                 iceServers: [     // Information about ICE servers - Use your own!
                     {
                         urls: 'turn:' + server.hostname, // A TURN server
-                        username: "webrtc",
-                        credential: "szlosek",
+                        username: config.turnUsername,
+                        credential: config.turnPassword,
                         credentialType: 'password'
                     }
                 ]
             };
-            var myPeerConnection = self.connection = new RTCPeerConnection(config);
+            var myPeerConnection = self.connection = new RTCPeerConnection(rtcConfig);
 
             // Forward icecandidate events through signaling server
             myPeerConnection.onicecandidate = function(event) {
@@ -563,7 +635,7 @@ var createPeerConnection = function(source, target, username) {
 
                 // Stop all transceivers on the connection
                 myPeerConnection.getTransceivers().forEach(function(t) {
-                    // Chrome doesn't have stop()
+            // Chrome doesn't have stop()
                     if (t.stop) t.stop();
                 });
             }
@@ -595,7 +667,6 @@ var createPeerConnection = function(source, target, username) {
             }
 
             try {
-                // TODO: this is old, handled above with canNegotiate
                 // If the connection hasn't yet achieved the "stable" state,
                 // return to the caller. Another negotiationneeded event
                 // will be fired when the state stabilizes.
@@ -603,6 +674,14 @@ var createPeerConnection = function(source, target, username) {
                     self.log('Not stable yet, postponing ...');
                     return;
                 }
+
+/*
+                // Skip if we're in a pending state from a remote offer
+                if (self.connection.pendingRemoteDescription) {
+                    console.log('Connection with ' + self.target + '. Already in the middle of remote-initiated negotation. Doing nothing for now.');
+                    return;
+                }
+*/
 
                 // Moved this from above stable check above
                 self.log('Creating offer.');
@@ -623,8 +702,6 @@ var createPeerConnection = function(source, target, username) {
                     type: "video-offer",
                     sdp: offer 
                 });
-
-                self.pendingNegotiation = false;
             } catch(err) {
                 self.log('Negotation error: ');
                 self.log(err);
