@@ -25,6 +25,10 @@ html, body, div,img {
     border-color: #f8f8f8;
 }
 
+.error {
+    background-color: #ab4642;
+}
+
 /*
 #grid.one {
     grid-template-columns: auto;
@@ -147,7 +151,8 @@ var drawChildren = function(container, children) {
 
 var getMediaConstraints = function() {
     var mediaConstraints = {
-        audio: true,            // We want an audio track
+        audio: true, // We want an audio track
+        //video: false // Let's default to no video at the start
         video: {
             height: { min: 240, ideal: 240, max: 720 },
             frameRate: { min: 2, ideal: 10, max: 30 }
@@ -158,9 +163,13 @@ var getMediaConstraints = function() {
     var frameRate = localStorage.getItem('frameRate');
     if (videoHeight) {
          mediaConstraints['video']['height'] = videoHeight;
+    } else {
+         mediaConstraints['video']['height'] = 320;
     }
     if (frameRate) {
          mediaConstraints['video']['frameRate'] = frameRate;
+    } else {
+         mediaConstraints['video']['frameRate'] = 10;
     }
     return mediaConstraints;
 
@@ -213,12 +222,9 @@ var nav = {
     videoInput: function(target, e) {
         var value = e.target.value;
         var key = 'videoInput';
-        if (!value) {
-            localStorage.remoteItem(key);
-            return;
-        }
         localStorage.setItem(key, value);
         if (!value) {
+            // No Video
             var tracks = server.stream.getVideoTracks();
             for (var id in users) {
                 if (id == server.clientID) continue;
@@ -231,7 +237,9 @@ var nav = {
                     });
                 });
             }
+        } else if (value == 'default') {
         } else {
+            // Specific device
         }
     },
     videoHeight: function(target, e) {
@@ -266,21 +274,42 @@ var nav = {
             }
         });
     },
+
     videoMute: function(target, e) {
         var self = this;
         if (self.videoMuted) {
             server.stream.getVideoTracks().forEach(function(track) {
-                track.start();
+                track.enabled = true;
             });
             self.videoMuted = false;
+            target.classList.remove('error');
         } else {
             server.stream.getVideoTracks().forEach(function(track) {
-                track.stop();
+                track.enabled = false;
             });
             self.videoMuted = true;
+            target.classList.add('error');
+        }
+
+    },
+    audioMute: function(target, e) {
+        var self = this;
+        if (self.audioMuted) {
+            server.stream.getAudioTracks().forEach(function(track) {
+                track.enabled = true;
+            });
+            self.audioMuted = false;
+            target.classList.remove('error');
+        } else {
+            server.stream.getAudioTracks().forEach(function(track) {
+                track.enabled = false;
+            });
+            self.audioMuted = true;
+            target.classList.add('error');
         }
 
     }
+
 };
 nav.init();
 
@@ -506,8 +535,8 @@ var server = {
             var audioInput = localStorage.getItem('audioInput');
             var deviceTags = {
                 'videoinput': [
-                    tag('option', {value: ''}, ['Camera']),
-                    tag('option', {value: ''}, ['No Video'])
+                    tag('option', {value: ''}, ['No Camera']),
+                    tag('option', {value: 'default'}, ['Default Camera'])
                 ],
                 'audioinput': [
                     tag('option', {}, ['Audio'])
@@ -970,3 +999,6 @@ var createPeerConnection = function(source, target, username) {
 </script>
 </body>
 </html>
+
+
+
