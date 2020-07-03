@@ -12,7 +12,7 @@ html, body, div,img {
 #nav {
     background-color: #7cafc2;
     display: grid;
-    grid-template-columns: auto auto auto auto auto;
+    grid-template-columns: auto 80px auto 80px auto auto auto;
 }
 #nav > div {
     border-bottom: 3px solid #7cafc2;
@@ -49,17 +49,19 @@ html, body, div,img {
 
 <div id="nav">
     <div><input id="username" placeholder="nickname" /></div>
-    <select id="audioinput"><option>Audio</option></select>
-    <select id="videoinput"><option>Cameras</option></select>
-    <select id="videoquality">
-        <option>Video Quality</option>
+    <button id="audioMute" data-action="audioMute">NoSnd</button>
+    <select id="audioInput" data-action="audioInput"></select>
+    <button id="vidioMute" data-action="videoMute">NoVid</button>
+    <select id="videoInput" data-action="videoInput"></select>
+    <select id="videoHeight" data-action="videoHeight">
+        <option>Video Height</option>
         <option value="240" selected>240p</option>
         <option value="360">360p</option>
         <option value="480">480p</option>
         <option value="720">720p</option>
         <option value="1080">1080p</option>
     </select>
-    <select id="framerate">
+    <select id="frameRate" data-action="frameRate">
         <option>Frames Per Second</option>
         <option value="10" selected>10fps</option>
         <option value="20">20fps</option>
@@ -143,65 +145,144 @@ var drawChildren = function(container, children) {
 
 // APP SPECIFIC CODE
 
-var mediaConstraints = {
-    audio: true,            // We want an audio track
-    video: {
-        height: { min: 240, ideal: 240, max: 720 },
-        frameRate: { min: 2, ideal: 10, max: 30 }
+var getMediaConstraints = function() {
+    var mediaConstraints = {
+        audio: true,            // We want an audio track
+        video: {
+            height: { min: 240, ideal: 240, max: 720 },
+            frameRate: { min: 2, ideal: 10, max: 30 }
+        }
+    };
+    // Check localStorage
+    var videoHeight = localStorage.getItem('videoHeight');
+    var frameRate = localStorage.getItem('frameRate');
+    if (videoHeight) {
+         mediaConstraints['video']['height'] = videoHeight;
     }
+    if (frameRate) {
+         mediaConstraints['video']['frameRate'] = frameRate;
+    }
+    return mediaConstraints;
+
 };
 
-var handles = {
-    username: document.getElementById('username'),
-    audioinput: document.getElementById('audioinput'),
-    videoinput: document.getElementById('videoinput'),
-    videoquality: document.getElementById('videoquality'),
-    framerate: document.getElementById('framerate')
-};
-
-handles.username.addEventListener('change', function(e) {
-    var username = e.target.value;
-    server.clientUsername = username;
-    server.send({
-        source: server.clientID,
-        type: 'username',
-        username: username
-    });
-    console.log(e.target.value);
-});
-handles.videoquality.addEventListener('change', function(e) {
-    var value = e.target.value;
-    if (!value) return;
-
-    server.stream.getTracks().forEach(function(track) {
-        console.log(track);
-        if (track.kind == 'video') {
-            track.applyConstraints({height: value});
-        }
-    });
-});
-handles.framerate.addEventListener('change', function(e) {
-    var value = e.target.value;
-    if (!value) return;
-
-    server.stream.getTracks().forEach(function(track) {
-        console.log(track);
-        if (track.kind == 'video') {
-            track.applyConstraints({framerate: value});
-        }
-    });
-});
 
 var nav = {
-    interval: null,
+    videoMuted: false,
+    audioMuted: false,
     handles: {
-        container: document.getElementById('nav')
+        container: document.getElementById('nav'),
+        username: document.getElementById('username'),
+        audioInput: document.getElementById('audioInput'),
+        videoInput: document.getElementById('videoInput'),
+        videoHeight: document.getElementById('videoHeight'),
+        frameRate: document.getElementById('frameRate')
     },
     init: function() {
         var self = this;
-    }
+        var handler = function(event) {
+            var target = event.target;
+            var action;
+            // go up a level if material icon was clicked
+            if (target.tagName == 'I') {
+                target = target.parentNode;
+            }
+            action = target.getAttribute('data-action');
+            if (action in self) {
+                self[action](target, event);
+            }
+        };
+        //self.handles.container.addEventListener('click', handler);
+        self.handles.container.addEventListener('change', handler);
+    },
 
+    _save: function(key, value) {
+    },
+
+    username: function(e) {
+        var username = e.target.value;
+        server.clientUsername = username;
+        server.send({
+            source: server.clientID,
+            type: 'username',
+            username: username
+        });
+        console.log(e.target.value);
+    },
+
+    videoInput: function(target, e) {
+        var value = e.target.value;
+        var key = 'videoInput';
+        if (!value) {
+            localStorage.remoteItem(key);
+            return;
+        }
+        localStorage.setItem(key, value);
+        if (!value) {
+            var tracks = server.stream.getVideoTracks();
+            for (var id in users) {
+                if (id == server.clientID) continue;
+                var user = users[id];
+                user.connection.getSenders().forEach(function(sender) {
+                    tracks.forEach(function(track) {
+                        if (track == sender.track) {
+                            user.connection.removeTrack(sender);
+                        }
+                    });
+                });
+            }
+        } else {
+        }
+    },
+    videoHeight: function(target, e) {
+        var value = e.target.value;
+        var key = 'videoHeight';
+        if (!value) {
+            localStorage.remoteItem(key);
+            return;
+        }
+        localStorage.setItem(key, value);
+
+        server.stream.getTracks().forEach(function(track) {
+            console.log(track);
+            if (track.kind == 'video') {
+                track.applyConstraints({height: value});
+            }
+        });
+    },
+    frameRate: function(target, e) {
+        var value = e.target.value;
+        var key = 'frameRate';
+        if (!value) {
+            localStorage.removeItem(key);
+            return;
+        }
+        localStorage.setItem(key, value);
+
+        server.stream.getTracks().forEach(function(track) {
+            console.log(track);
+            if (track.kind == 'video') {
+                track.applyConstraints({framerate: value});
+            }
+        });
+    },
+    videoMute: function(target, e) {
+        var self = this;
+        if (self.videoMuted) {
+            server.stream.getVideoTracks().forEach(function(track) {
+                track.start();
+            });
+            self.videoMuted = false;
+        } else {
+            server.stream.getVideoTracks().forEach(function(track) {
+                track.stop();
+            });
+            self.videoMuted = true;
+        }
+
+    }
 };
+nav.init();
 
 var users = {};
 
@@ -246,7 +327,7 @@ var grid = {
                     newUser.deferNegotiationOnce = true;
                     // newUser.addTracks();
                 } else {
-                    newUser.addTracks();
+	                newUser.addTracks();
                 }
             }
         }
@@ -339,7 +420,7 @@ var server = {
                     };
                     console.log(navigator.mediaDevices.getSupportedConstraints());
 
-                    navigator.mediaDevices.getUserMedia(mediaConstraints).then(function(stream) {
+                    navigator.mediaDevices.getUserMedia(getMediaConstraints()).then(function(stream) {
                         // keep handle to our video/camera stream
                         self.stream = stream;
                         stream.getTracks().forEach(function(track) {
@@ -352,30 +433,7 @@ var server = {
                             videoTag.play();
                         };
 
-                        // List cameras and microphones.
-                        navigator.mediaDevices.enumerateDevices().then(function(devices) {
-                            var deviceTags = {
-                                'videoinput': [
-                                tag('option', {}, ['Camera'])
-                                ],
-                                'audioinput': [
-                                tag('option', {}, ['Audio'])
-                                ]
-                            };
-                            devices.forEach(function(device) {
-                                if (device.kind in deviceTags) {
-                                    deviceTags[ device.kind ].push(
-                                        tag('option', {value: device.deviceId}, [device.label])
-                                    );
-                                }
-                            });
-                            drawChildren(handles.audioinput, deviceTags['audioinput']);
-                            drawChildren(handles.videoinput, deviceTags['videoinput']);
-                        })
-                        .catch(function(err) {
-                            alert('Could not enumerate media devices. Check console.');
-                            console.log(err.name + ": " + err.message);
-                        });
+                        self.handleDeviceChange();
                     })
                     .catch(function(err) {
                         alert('Could not get media device. Check console.');
@@ -438,6 +496,47 @@ var server = {
         var self = this;
         var msgJSON = JSON.stringify(msg);
         self.connection.send(msgJSON);
+    },
+    handleDeviceChange: function() {
+        var self = this;
+
+        // List cameras and microphones.
+        navigator.mediaDevices.enumerateDevices().then(function(devices) {
+            var videoInput = localStorage.getItem('videoInput');
+            var audioInput = localStorage.getItem('audioInput');
+            var deviceTags = {
+                'videoinput': [
+                    tag('option', {value: ''}, ['Camera']),
+                    tag('option', {value: ''}, ['No Video'])
+                ],
+                'audioinput': [
+                    tag('option', {}, ['Audio'])
+                ]
+            };
+            devices.forEach(function(device) {
+                if (device.kind in deviceTags) {
+                    var attributes = {value: device.deviceId};
+                    if (device.kind == 'videoinput') {
+                        if (device.deviceId == videoInput) {
+                            attributes['selected'] = 'selected';
+                        }
+                    } else {
+                        if (device.deviceId == audioInput) {
+                            attributes['selected'] = 'selected';
+                        }
+                    }
+                    deviceTags[ device.kind ].push(
+                        tag('option', attributes, [device.label])
+                    );
+                }
+            });
+            drawChildren(nav.handles.audioInput, deviceTags['audioinput']);
+            drawChildren(nav.handles.videoInput, deviceTags['videoinput']);
+        })
+        .catch(function(err) {
+            alert('Could not enumerate media devices. Check console.');
+            console.log(err.name + ": " + err.message);
+        });
     }
 };
 
@@ -635,7 +734,7 @@ var createPeerConnection = function(source, target, username) {
 
                 // Stop all transceivers on the connection
                 myPeerConnection.getTransceivers().forEach(function(t) {
-            // Chrome doesn't have stop()
+			// Chrome doesn't have stop()
                     if (t.stop) t.stop();
                 });
             }
@@ -702,6 +801,7 @@ var createPeerConnection = function(source, target, username) {
                     type: "video-offer",
                     sdp: offer 
                 });
+                self.pendingNegotiation = false;
             } catch(err) {
                 self.log('Negotation error: ');
                 self.log(err);
@@ -782,7 +882,7 @@ var createPeerConnection = function(source, target, username) {
         },
 
         log: function(msg) {
-            var self = this;
+		var self = this;
             console.log('Connection with ' + self.target + '. ' + msg);
         },
 
@@ -870,6 +970,3 @@ var createPeerConnection = function(source, target, username) {
 </script>
 </body>
 </html>
-
-
-
