@@ -149,32 +149,6 @@ var drawChildren = function(container, children) {
 
 // APP SPECIFIC CODE
 
-var getMediaConstraints = function() {
-    var mediaConstraints = {
-        audio: true, // We want an audio track
-        //video: false // Let's default to no video at the start
-        video: {
-            height: { min: 240, ideal: 240, max: 720 },
-            frameRate: { min: 2, ideal: 10, max: 30 }
-        }
-    };
-    // Check localStorage
-    var videoHeight = localStorage.getItem('videoHeight');
-    var frameRate = localStorage.getItem('frameRate');
-    if (videoHeight) {
-         mediaConstraints['video']['height'] = videoHeight;
-    } else {
-         mediaConstraints['video']['height'] = 320;
-    }
-    if (frameRate) {
-         mediaConstraints['video']['frameRate'] = frameRate;
-    } else {
-         mediaConstraints['video']['frameRate'] = 10;
-    }
-    return mediaConstraints;
-
-};
-
 
 var nav = {
     videoMuted: false,
@@ -223,6 +197,7 @@ var nav = {
         var value = e.target.value;
         var key = 'videoInput';
         localStorage.setItem(key, value);
+        return;
         if (!value) {
             // No Video
             var tracks = server.stream.getVideoTracks();
@@ -308,6 +283,11 @@ var nav = {
             target.classList.add('error');
         }
 
+    },
+    audioInput: function(target, e) {
+        var value = e.target.value;
+        var key = 'audioInput';
+        localStorage.setItem(key, value);
     }
 
 };
@@ -449,25 +429,7 @@ var server = {
                     };
                     console.log(navigator.mediaDevices.getSupportedConstraints());
 
-                    navigator.mediaDevices.getUserMedia(getMediaConstraints()).then(function(stream) {
-                        // keep handle to our video/camera stream
-                        self.stream = stream;
-                        stream.getTracks().forEach(function(track) {
-                            if (track.getCapabilities) console.log(track.getCapabilities());
-                            // Prints constraints currently in use
-                            //console.log(track.getConstraints());
-                        });
-                        videoTag.srcObject = new MediaStream(stream.getVideoTracks());
-                        videoTag.onloadedmetadata = function() {
-                            videoTag.play();
-                        };
-
-                        self.handleDeviceChange();
-                    })
-                    .catch(function(err) {
-                        alert('Could not get media device. Check console.');
-                        console.log(err.name + ": " + err.message);
-                    });
+                    self.activateMediaDevices();
                     break;
 
                     /*
@@ -526,6 +488,73 @@ var server = {
         var msgJSON = JSON.stringify(msg);
         self.connection.send(msgJSON);
     },
+
+    getMediaConstraints: function() {
+        var mediaConstraints = {
+            audio: true, // We want an audio track
+            //video: false // Let's default to no video at the start
+            video: {
+                height: { min: 240, ideal: 240, max: 720 },
+                frameRate: { min: 2, ideal: 10, max: 30 }
+            }
+        };
+        // Check localStorage
+        var videoDeviceId = localStorage.getItem('videoInput');
+        var videoHeight = localStorage.getItem('videoHeight');
+        var frameRate = localStorage.getItem('frameRate');
+
+        var audioDeviceId = localStorage.getItem('audioInput');
+
+        if (videoDeviceId == 'none') {
+            mediaConstraints['video'] = false;
+        } else {
+            if (videoDeviceId == null) {
+            } else if (videoDeviceId != 'default') {
+                mediaConstraints['video']['deviceId'] = videoDeviceId;
+            }
+
+            if (videoHeight) {
+                 mediaConstraints['video']['height'] = videoHeight;
+            }
+            if (frameRate) {
+                 mediaConstraints['video']['frameRate'] = frameRate;
+            }
+        }
+
+        if (audioDeviceId == 'none') {
+        } else {
+            if (audioDeviceId != 'default') {
+                mediaConstraints['audio']['deviceId'] = videoDeviceId;
+            }
+        }
+        return mediaConstraints;
+    },
+
+    activateMediaDevices: function() {
+        var self = this;
+        var constraints = self.getMediaConstraints();
+        console.log(constraints);
+        navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+            // keep handle to our video/camera stream
+            self.stream = stream;
+            stream.getTracks().forEach(function(track) {
+                if (track.getCapabilities) console.log(track.getCapabilities());
+                // Prints constraints currently in use
+                //console.log(track.getConstraints());
+            });
+            self.videoTag.srcObject = new MediaStream(stream.getVideoTracks());
+            self.videoTag.onloadedmetadata = function() {
+                self.videoTag.play();
+            };
+
+            self.handleDeviceChange();
+        })
+        .catch(function(err) {
+            alert('Could not get media device. Check console.');
+            console.log(err.name + ": " + err.message);
+        });
+    },
+
     handleDeviceChange: function() {
         var self = this;
 
@@ -535,11 +564,11 @@ var server = {
             var audioInput = localStorage.getItem('audioInput');
             var deviceTags = {
                 'videoinput': [
-                    tag('option', {value: ''}, ['No Camera']),
-                    tag('option', {value: 'default'}, ['Default Camera'])
+                    tag('option', {value: 'default'}, ['Default Camera']),
+                    tag('option', {value: 'none'}, ['No Camera'])
                 ],
                 'audioinput': [
-                    tag('option', {}, ['Audio'])
+                    tag('option', {value: 'default'}, ['Default Audio Input'])
                 ]
             };
             devices.forEach(function(device) {
@@ -999,6 +1028,3 @@ var createPeerConnection = function(source, target, username) {
 </script>
 </body>
 </html>
-
-
-
