@@ -163,7 +163,8 @@ var nav = {
     },
     init: function() {
         var self = this;
-        var handler = function(event) {
+
+        var clickHandler = function(event) {
             var target = event.target;
             var action;
             // go up a level if material icon was clicked
@@ -171,12 +172,31 @@ var nav = {
                 target = target.parentNode;
             }
             action = target.getAttribute('data-action');
+                    console.log(event);
             if (action in self) {
-                self[action](target, event);
+                if (target.tagName != 'SELECT') {
+                    self[action](target, event);
+                }
             }
         };
-        //self.handles.container.addEventListener('click', handler);
-        self.handles.container.addEventListener('change', handler);
+
+        var changeHandler = function(event) {
+            var target = event.target;
+            var action;
+            // go up a level if material icon was clicked
+            if (target.tagName == 'I') {
+                target = target.parentNode;
+            }
+            action = target.getAttribute('data-action');
+                    console.log(event);
+            if (action in self) {
+                if (target.tagName == 'SELECT') {
+                    self[action](target, event);
+                }
+            }
+        };
+        self.handles.container.addEventListener('click', clickHandler);
+        self.handles.container.addEventListener('change', changeHandler);
     },
 
     _save: function(key, value) {
@@ -351,6 +371,7 @@ var grid = {
     }
 }
 
+/*
 var modules = [
     nav
 ];
@@ -385,6 +406,7 @@ modules.forEach(function(self) {
     });
     self.init();
 });
+*/
 
 
 
