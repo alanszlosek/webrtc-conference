@@ -45,9 +45,7 @@ html, body, div,img {
 */
 </style>
 <script src="config.js"></script>
-<!--
 <script src="adapter.js"></script>
--->
 </head>
 <body>
 
@@ -356,7 +354,7 @@ var grid = {
                     newUser.deferNegotiationOnce = true;
                     // newUser.addTracks();
                 } else {
-	                newUser.addTracks();
+                    newUser.addTracks();
                 }
             }
         }
@@ -436,7 +434,7 @@ var server = {
                     server.clientID = msg.id;
                     server.clientUsername = msg.username;
 
-                    var videoTag = server.videoTag = tag('video', {}, []);
+                    var videoTag = server.videoTag = tag('video', {autoplay: 'autoplay', controls: 'false'}, []);
                     var a = tag(
                         'div',
                         {},
@@ -646,7 +644,7 @@ var createPeerConnection = function(source, target, username) {
         deferNegotiationOnce: false,
         init: function() {
             var self = this;
-            var videoTag = tag('video', {}, []);
+            var videoTag = tag('video', {autoplay: 'autoplay', controls: 'false'}, []);
             var a = tag(
                 'div',
                 {},
@@ -659,6 +657,7 @@ var createPeerConnection = function(source, target, username) {
             videoTag.onloadedmetadata = function() {
                 console.log('onloadedmetadata');
             };
+            // hopefully the autoplay attribute will take care of this and we can remove
             videoTag.oncanplay = function() {
                 console.log('oncanplay');
                 videoTag.play()
@@ -670,6 +669,7 @@ var createPeerConnection = function(source, target, username) {
 
             console.log('Preparing connection to ' + self.target);
             var rtcConfig = {
+                //sdpSemantics: 'plan-b',
                 iceServers: [     // Information about ICE servers - Use your own!
                     {
                         urls: 'turn:' + server.hostname, // A TURN server
@@ -679,6 +679,9 @@ var createPeerConnection = function(source, target, username) {
                     }
                 ]
             };
+        },
+        connect: function() {
+            var self = this;
             var myPeerConnection = self.connection = new RTCPeerConnection(rtcConfig);
 
             // Forward icecandidate events through signaling server
@@ -742,7 +745,7 @@ var createPeerConnection = function(source, target, username) {
             };
             
             // Called by the WebRTC layer to let us know when it's time to
-            // begin, resume, or restart ICE negotiation.
+            // begin, resume, or restart SDP negotiation.
             myPeerConnection.onnegotiationneeded = function () {
                 self.handleNegotiation();
             };
@@ -769,6 +772,7 @@ var createPeerConnection = function(source, target, username) {
                 self.videoTag.srcObject.addTrack(event.track);
             };
 
+            self.addTracks();
         },
         addTracks: function() {
             var self = this;
@@ -814,9 +818,10 @@ var createPeerConnection = function(source, target, username) {
 
                 // Stop all transceivers on the connection
                 myPeerConnection.getTransceivers().forEach(function(t) {
-			// Chrome doesn't have stop()
+                    // Chrome doesn't have stop()
                     if (t.stop) t.stop();
                 });
+                self.connection = null;
             }
 
             // Stop the webcam preview as well by pausing the <video>
@@ -962,7 +967,7 @@ var createPeerConnection = function(source, target, username) {
         },
 
         log: function(msg) {
-		var self = this;
+        var self = this;
             console.log('Connection with ' + self.target + '. ' + msg);
         },
 
@@ -1050,3 +1055,6 @@ var createPeerConnection = function(source, target, username) {
 </script>
 </body>
 </html>
+
+
+
