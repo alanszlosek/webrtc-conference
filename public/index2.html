@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -337,24 +338,24 @@ var grid = {
             }
         }
         for (var id in currentUsers) {
-            // skip self
+            // We are returned in the list of current users, skip ourselves
             if (id == server.clientID) {
                 console.log('skipping self');
                 continue;
             }
+            // If we encountered a new user
             if (!(id in users)) {
                 var user = currentUsers[id];
-                var newUser = createPeerConnection(server.myId, id, user.username);
+                var newUser = createPeer(server.myId, id, user.username);
                 grid.handles.container.appendChild(newUser.container);
                 users[id] = newUser;
 
-                // client with the lower id should begin the negotiation, otherwise we have weird state race conditions
+                // New users (with higher clientID) should initiate the connection
                 if (server.clientID > id) {
-                    // adding MediaStream tracks kicks off the negotation
-                    newUser.deferNegotiationOnce = true;
-                    // newUser.addTracks();
-                } else {
-                    newUser.addTracks();
+                    // Start Peer Connection
+                    // Create and send offer
+                    newUser.createConnection();
+                    //newUser.sendOffer();
                 }
             }
         }
@@ -477,6 +478,7 @@ var server = {
                 // call.
 
                 case "video-offer": // Remote wants to connect
+                    console.log(msg);
                     users[msg.source].handleOffer(msg)
                     break;
 
@@ -628,7 +630,7 @@ server.init();
 // needed notifications on the call.
 
 // async?
-var createPeerConnection = function(source, target, username) {
+var createPeer = function(source, target, username) {
 
     // Create an RTCPeerConnection which knows to use our chosen
     // STUN server.
@@ -641,6 +643,7 @@ var createPeerConnection = function(source, target, username) {
         stream: null,
         videoTag: null,
         closed: false,
+        rtcConfig: null,
         deferNegotiationOnce: false,
         init: function() {
             var self = this;
@@ -667,8 +670,8 @@ var createPeerConnection = function(source, target, username) {
             self.videoTag = videoTag;
             self.container = a;
 
-            console.log('Preparing connection to ' + self.target);
-            var rtcConfig = {
+            console.log('Setting up for connection to ' + self.target);
+            self.rtcConfig = {
                 //sdpSemantics: 'plan-b',
                 iceServers: [     // Information about ICE servers - Use your own!
                     {
@@ -680,12 +683,13 @@ var createPeerConnection = function(source, target, username) {
                 ]
             };
         },
-        connect: function() {
+        createConnection: function() {
             var self = this;
-            var myPeerConnection = self.connection = new RTCPeerConnection(rtcConfig);
+            var myPeerConnection = self.connection = new RTCPeerConnection(self.rtcConfig);
 
             // Forward icecandidate events through signaling server
             myPeerConnection.onicecandidate = function(event) {
+                // TODO: should we wait until we're connected?
                 if (event.candidate) {
                     self.log('Sending new-ice-candidate event to ' + self.target);
                     server.send({
@@ -711,6 +715,11 @@ var createPeerConnection = function(source, target, username) {
                 }
             };
 
+            myPeerConnection.onconnectionstatechange = function(event) {
+                self.log('Connection State changed to ' + self.connection.connectionState);
+                self.log('Maybe now we can add tracks?');
+            };
+
             // Handle the |icegatheringstatechange| event. This lets us know what the
             // ICE engine is currently working on: "new" means no networking has happened
             // yet, "gathering" means the ICE engine is currently gathering candidates,
@@ -734,9 +743,11 @@ var createPeerConnection = function(source, target, username) {
                 self.log('Signaling state changed to ' + self.connection.signalingState);
                 switch(self.connection.signalingState) {
                     case "stable":
+                        /*
                         if (self.pendingNegotiation) {
                             self.handleNegotiation();
                         }
+                        */
                         break;
                     case "closed":
                         self.close();
@@ -773,6 +784,7 @@ var createPeerConnection = function(source, target, username) {
             };
 
             self.addTracks();
+            //self.sendOffer();
         },
         addTracks: function() {
             var self = this;
@@ -802,6 +814,16 @@ var createPeerConnection = function(source, target, username) {
 
         close: function() {
             var self = this;
+
+            // Stop the webcam preview as well by pausing the <video>
+            // element, then stopping each of the getUserMedia() tracks
+            // on it.
+            if (self.videoTag.srcObject) {
+                self.videoTag.pause();
+                self.videoTag.srcObject.getTracks().forEach(track => {
+                    track.stop();
+                });
+            }
             if (self.connection) {
                 console.log('Connection with ' + self.target + '. Closing connection');
 
@@ -821,28 +843,19 @@ var createPeerConnection = function(source, target, username) {
                     // Chrome doesn't have stop()
                     if (t.stop) t.stop();
                 });
+
+                // Close the peer connection
+                self.connection.close();
                 self.connection = null;
             }
-
-            // Stop the webcam preview as well by pausing the <video>
-            // element, then stopping each of the getUserMedia() tracks
-            // on it.
-
-            if (self.videoTag.srcObject) {
-                self.videoTag.pause();
-                self.videoTag.srcObject.getTracks().forEach(track => {
-                    track.stop();
-                });
-            }
-
-            // Close the peer connection
-            myPeerConnection.close();
             self.closed = true;
         },
 
         handleNegotiation: async function() {
             var self = this;
             self.log('Negotiation needed');
+            self.sendOffer();
+            return;
 
             if (!self.canNegotiate()) {
                 self.log('Queueing up negotiation');
@@ -893,10 +906,50 @@ var createPeerConnection = function(source, target, username) {
             };
         },
 
-        // TODO: rename this. it's confusing
+        sendOffer: async function() {
+            var self = this;
+            self.log('Send offer');
+            /*
+            if (!self.canSendOffer()) {
+                self.log('Bailing on send offer');
+                return;
+            }
+            */
+
+            if (self.connection.signalingState != 'stable') {
+                self.log('Signaling state not stable, CAN NOT send offer');
+                return;
+            }
+
+            self.log('Creating offer.');
+            self.connection.createOffer()
+                .then(function(offer) {
+                    if (self.connection.signalingState != 'stable') {
+                        throw new Error('Signaling state not stable, CAN NOT set localDescription');
+                    }
+                    // Establish the offer as the local peer's current description.
+                    self.log('Setting local description to the offer');
+                    return self.connection.setLocalDescription(offer);
+                })
+                .then(function() {
+                    // Send the offer to the remote peer through the signaling server
+                    self.log('Sending offer.');
+                    server.send({
+                        source: server.clientID,
+                        target: self.target,
+                        type: "video-offer",
+                        sdp: self.connection.localDescription 
+                    });
+                })
+                .catch(function(err) {
+                    console.log(err);
+                });
+        },
+
         handleOffer: async function(msg) {
             var self = this;
-            console.log('Connection with ' + self.target + '. Received offer');
+            self.createConnection();
+            self.log('Received offer');
             if (!self.canHandleOffer()) {
                 self.log('Bailing on offer');
                 return;
@@ -904,43 +957,32 @@ var createPeerConnection = function(source, target, username) {
 
             // We need to set the remote description to the received SDP offer
             // so that our local WebRTC layer knows how to talk to the caller.
-            var desc = new RTCSessionDescription(msg.sdp);
+            self.log('Setting remote description');
+            await self.connection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
 
-            // If the connection isn't stable yet, wait for it...
-            // TODO: this logic strange ... verify that it's correct
-            if (self.connection.signalingState != "stable") {
-                console.log('Connection with ' + self.target + '. Signaling state not stable, triggering rollback');
-
-                // Set the local and remove descriptions for rollback; don't proceed
-                // until both return.
-                await Promise.all([
-                    self.connection.setLocalDescription({type: "rollback"}),
-                    self.connection.setRemoteDescription(desc)
-                ]);
-                return;
-            } else {
-                console.log('Connection with ' + self.target + '. Setting remote description');
-                await self.connection.setRemoteDescription(desc);
-            }
-            // add tracks to continue with the negotiation
-            self.addTracks();
-
-            console.log('Connection with ' + self.target + '. Creating and sending answer');
-
-            await self.connection.setLocalDescription(await self.connection.createAnswer());
-
-            server.send({
-                source: server.clientID,
-                target: self.target,
-                type: "video-answer",
-                sdp: self.connection.localDescription
-            });
-
+            self.log('Creating answer');
+            self.connection.createAnswer()
+                .then(function(answer) {
+                    self.log('Setting local description to answer');
+                    return self.connection.setLocalDescription(answer);
+                })
+                .then(function() {
+                    self.log('Sending answer');
+                    server.send({
+                        source: server.clientID,
+                        target: self.target,
+                        type: "video-answer",
+                        sdp: self.connection.localDescription
+                    });
+                })
+                .catch(function(err) {
+                    self.log(err.name + ': ' + err.message);
+                });
         },
 
         handleAnswer: function(msg) {
             var self = this;
-            console.log('Connection with ' + self.target + '. Received answer');
+            self.log('Received answer');
             if (!self.canHandleAnswer()) {
                 self.log('Bailing on answer');
                 return;
@@ -949,6 +991,7 @@ var createPeerConnection = function(source, target, username) {
             // Configure the remote description, which is the SDP payload
             // in our "video-answer" message.
 
+            self.log('Setting remote description');
             var desc = new RTCSessionDescription(msg.sdp);
             self.connection.setRemoteDescription(desc).catch(function(err) {
                 console.log(err);
@@ -967,11 +1010,37 @@ var createPeerConnection = function(source, target, username) {
         },
 
         log: function(msg) {
-        var self = this;
+            var self = this;
             console.log('Connection with ' + self.target + '. ' + msg);
         },
 
         // State checking stuff
+
+        canSendOffer: function() {
+            var self = this;
+            switch (self.connection.signalingState) {
+                case 'stable':
+                    self.log('State is stable, can send offer');
+                    return true;
+                    break;
+                case 'have-local-offer':
+                    self.log('We have-local-offer, cannot send offer');
+                    break;
+                case 'have-remote-offer':
+                    self.log('We have-remote-offer, cannot send offer');
+                    break;
+                case 'have-local-pranswer':
+                    self.log('We have-local-pranswer (sent provisional answer to remote offer), cannot accept offer');
+                    break;
+                case 'have-remote-pranswer':
+                    self.log('We have-remote-pranswer (recived provisional answer to our offer), cannot accept offer');
+                    break;
+                default:
+                    self.log('Unexpected status ' + self.connection.signalingState);
+            }
+            return false;
+        },
+
         canHandleOffer: function() {
             var self = this;
             if (self.connection.signalingState == 'stable') {
@@ -1055,6 +1124,7 @@ var createPeerConnection = function(source, target, username) {
 </script>
 </body>
 </html>
+
 
 
 
