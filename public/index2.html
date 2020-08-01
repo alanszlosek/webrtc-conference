@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8" />
+<style>
+html, body, div,img {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+#nav {
+    background-color: #7cafc2;
+    display: grid;
+    grid-template-columns: auto 80px auto 80px auto auto auto;
+}
+#nav > div {
+    border-bottom: 3px solid #7cafc2;
+    color: #fff;
+    height: 3em;
+    line-height: 3em;
+    text-align: center;
+}
+#nav > div.success {
+    border-color: #f8f8f8;
+}
+
+.error {
+    background-color: #ab4642;
+}
+
+/*
+#grid.one {
+    grid-template-columns: auto;
+}
+#grid.two {
+    grid-template-columns: auto auto;
+}
+#grid.four {
+    grid-template-columns: auto auto;
+}
+#grid.nine {
+    grid-template-columns: auto auto;
+}
+*/
+</style>
+<script src="config.js"></script>
+<script src="adapter.js"></script>
+</head>
+<body>
+
+<div id="nav">
+    <div><input id="username" placeholder="nickname" /></div>
+    <button id="audioMute" data-action="audioMute">NoSnd</button>
+    <select id="audioInput" data-action="audioInput"></select>
+    <button id="vidioMute" data-action="videoMute">NoVid</button>
+    <select id="videoInput" data-action="videoInput"></select>
+    <select id="videoHeight" data-action="videoHeight">
+        <option>Video Height</option>
+        <option value="240" selected>240p</option>
+        <option value="360">360p</option>
+        <option value="480">480p</option>
+        <option value="720">720p</option>
+        <option value="1080">1080p</option>
+    </select>
+    <select id="frameRate" data-action="frameRate">
+        <option>Frames Per Second</option>
+        <option value="10" selected>10fps</option>
+        <option value="20">20fps</option>
+        <option value="30">30fps</option>
+    </select>
+</div>
+
+<div id="grid" class="main" style="display: grid;grid-template-columns: auto;"></div>
+
+<script>
+var ajaxGet = function(url, callback) {
+    var request = new XMLHttpRequest();
+    request.open('GET', url, true);
+
+    request.addEventListener('load', function(event) {
+        var request = event.target;
+        if (request.status >= 200 && request.status < 400) {
+            // TODO: this is ugly
+            var error;
+            try {
+                var data = JSON.parse(request.responseText);
+            } catch (e) {
+                error = "JSON parse: " + e.message;
+            }
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, data);
+            }
+        } else {
+            // We reached our target server, but it returned an error
+            callback('Did not get 20x or 30x HTTP status');
+        }
+    });
+
+    request.addEventListener('error', function(event) {
+        callback('GET failed. Did we lose connectivity?');
+    });
+
+    request.send();
+};
+
+var tag = function(tagName, attributes, children) {
+    var element = document.createElement(tagName);
+    for (var i in attributes) {
+        element.setAttribute(i, attributes[i]);
+    }
+    // Convert text to text node
+    for (var i = 0; i < children.length; i ++) {
+        var node = children[i];
+        if (node == null) {
+            continue;
+        } else if (node instanceof Node) {
+        } else {
+            node = document.createTextNode(node);
+        }
+        element.appendChild(node);
+    }
+
+    return element;
+};
+var drawChildren = function(container, children) {
+    /*
+    More room for cool optimizations here:
+    - loop through current and desired children, compare using node types, merge differences if possible
+    */
+    // perhaps compare element ids
+
+    while (container.firstChild) {
+        container.removeChild(container.firstChild);
+    }
+    children.forEach(function(item) {
+        if (item == null) {
+            return;
+        }
+        container.appendChild(item);
+    });
+};
+
+
+
+// APP SPECIFIC CODE
+
+
+var nav = {
+    videoMuted: false,
+    audioMuted: false,
+    handles: {
+        container: document.getElementById('nav'),
+        username: document.getElementById('username'),
+        audioInput: document.getElementById('audioInput'),
+        videoInput: document.getElementById('videoInput'),
+        videoHeight: document.getElementById('videoHeight'),
+        frameRate: document.getElementById('frameRate')
+    },
+    init: function() {
+        var self = this;
+
+        var clickHandler = function(event) {
+            var target = event.target;
+            var action;
+            // go up a level if material icon was clicked
+            if (target.tagName == 'I') {
+                target = target.parentNode;
+            }
+            action = target.getAttribute('data-action');
+                    console.log(event);
+            if (action in self) {
+                if (target.tagName != 'SELECT') {
+                    self[action](target, event);
+                }
+            }
+        };
+
+        var changeHandler = function(event) {
+            var target = event.target;
+            var action;
+            // go up a level if material icon was clicked
+            if (target.tagName == 'I') {
+                target = target.parentNode;
+            }
+            action = target.getAttribute('data-action');
+                    console.log(event);
+            if (action in self) {
+                if (target.tagName == 'SELECT') {
+                    self[action](target, event);
+                }
+            }
+        };
+        self.handles.container.addEventListener('click', clickHandler);
+        self.handles.container.addEventListener('change', changeHandler);
+    },
+
+    _save: function(key, value) {
+    },
+
+    username: function(e) {
+        var username = e.target.value;
+        server.clientUsername = username;
+        server.send({
+            source: server.clientID,
+            type: 'username',
+            username: username
+        });
+        console.log(e.target.value);
+    },
+
+    videoInput: function(target, e) {
+        var value = e.target.value;
+        var key = 'videoInput';
+        localStorage.setItem(key, value);
+        return;
+        if (!value) {
+            // No Video
+            var tracks = server.stream.getVideoTracks();
+            for (var id in users) {
+                if (id == server.clientID) continue;
+                var user = users[id];
+                user.connection.getSenders().forEach(function(sender) {
+                    tracks.forEach(function(track) {
+                        if (track == sender.track) {
+                            user.connection.removeTrack(sender);
+                        }
+                    });
+                });
+            }
+        } else if (value == 'default') {
+        } else {
+            // Specific device
+        }
+    },
+    videoHeight: function(target, e) {
+        var value = e.target.value;
+        var key = 'videoHeight';
+        if (!value) {
+            localStorage.remoteItem(key);
+            return;
+        }
+        localStorage.setItem(key, value);
+
+        server.stream.getTracks().forEach(function(track) {
+            console.log(track);
+            if (track.kind == 'video') {
+                track.applyConstraints({height: value});
+            }
+        });
+    },
+    frameRate: function(target, e) {
+        var value = e.target.value;
+        var key = 'frameRate';
+        if (!value) {
+            localStorage.removeItem(key);
+            return;
+        }
+        localStorage.setItem(key, value);
+
+        server.stream.getTracks().forEach(function(track) {
+            console.log(track);
+            if (track.kind == 'video') {
+                track.applyConstraints({framerate: value});
+            }
+        });
+    },
+
+    videoMute: function(target, e) {
+        var self = this;
+        if (self.videoMuted) {
+            server.stream.getVideoTracks().forEach(function(track) {
+                track.enabled = true;
+            });
+            self.videoMuted = false;
+            target.classList.remove('error');
+        } else {
+            server.stream.getVideoTracks().forEach(function(track) {
+                track.enabled = false;
+            });
+            self.videoMuted = true;
+            target.classList.add('error');
+        }
+
+    },
+    audioMute: function(target, e) {
+        var self = this;
+        if (self.audioMuted) {
+            server.stream.getAudioTracks().forEach(function(track) {
+                track.enabled = true;
+            });
+            self.audioMuted = false;
+            target.classList.remove('error');
+        } else {
+            server.stream.getAudioTracks().forEach(function(track) {
+                track.enabled = false;
+            });
+            self.audioMuted = true;
+            target.classList.add('error');
+        }
+
+    },
+    audioInput: function(target, e) {
+        var value = e.target.value;
+        var key = 'audioInput';
+        localStorage.setItem(key, value);
+    }
+
+};
+nav.init();
+
+var users = {};
+
+var grid = {
+    handles: {
+        container: document.getElementById('grid')
+    },
+    init: function() {
+    },
+
+    users: function(currentUsers) {
+        var self = this;
+        // loop over users in list
+        // if user guid is not already in peers, add it and open peer connection to it
+        // loop over current peers
+        // if user wasn't seen in userlist, start cleanup
+        for (var id in users) {
+            var user = users[id];
+            if (!(id in currentUsers)) {
+                // Hang up
+                user.close();
+                // Remove video square from UI
+                user.container.parentNode.removeChild(user.container);
+                delete users[id];
+            }
+        }
+        for (var id in currentUsers) {
+            // skip self
+            if (id == server.clientID) {
+                console.log('skipping self');
+                continue;
+            }
+            if (!(id in users)) {
+                var user = currentUsers[id];
+                var newUser = createPeerConnection(server.myId, id, user.username);
+                grid.handles.container.appendChild(newUser.container);
+                users[id] = newUser;
+
+                // client with the lower id should begin the negotiation, otherwise we have weird state race conditions
+                if (server.clientID > id) {
+                    // adding MediaStream tracks kicks off the negotation
+                    newUser.deferNegotiationOnce = true;
+                    // newUser.addTracks();
+                } else {
+                    newUser.addTracks();
+                }
+            }
+        }
+        var numUsers = Object.keys(currentUsers).length;
+        if (numUsers > 4) {
+            self.handles.container.style['gridTemplateColumns'] = 'auto auto';
+        } else if (numUsers > 1) {
+            self.handles.container.style['gridTemplateColumns'] = 'auto auto';
+        } else {
+            self.handles.container.style['gridTemplateColumns'] = 'auto';
+        }
+    }
+}
+
+/*
+var modules = [
+    nav
+];
+var getHandles = function(obj) {
+    var container = obj.handles.container;
+    container.querySelectorAll('[data-handle]').forEach(function(el) {
+        obj.handles[ el.getAttribute('data-handle') ] = el;
+    });
+
+    container.querySelectorAll('[data-handleClass]').forEach(function(el) {
+        var handleClass = el.getAttribute('data-handleClass');
+        if (!(handleClass in obj.handles)) {
+            obj.handles[ handleClass ] = [];
+        }
+        obj.handles[ handleClass ].push(el);
+    });
+};
+modules.forEach(function(self) {
+    getHandles(self);
+    // automate this using data-action
+    self.handles.container.addEventListener('click', function(event) {
+        var target = event.target;
+        var action;
+        // go up a level if material icon was clicked
+        if (target.tagName == 'I') {
+            target = target.parentNode;
+        }
+        action = target.getAttribute('data-action');
+        if (action in self) {
+            self[action](target, event);
+        }
+    });
+    self.init();
+});
+*/
+
+
+
+var server = {
+    hostname: config.hostname,
+
+    connection: null,
+    clientID: null,
+    clientUsername: null,
+    videoTag: null,
+    stream: null,
+
+    init: function() {
+        var self = this;
+        var serverConnection = new WebSocket('wss://' + server.hostname + '/webconf/ws', "json");
+        serverConnection.onerror = function(err) {
+            console.log(err);
+        };
+        serverConnection.onmessage = function(evt) {
+            var rawMessage = evt.data;
+            var msg = JSON.parse(rawMessage);
+            var time = new Date(msg.date);
+            var timeStr = time.toLocaleTimeString();
+
+            switch(msg.type) {
+                case "you":
+                    server.clientID = msg.id;
+                    server.clientUsername = msg.username;
+
+                    var videoTag = server.videoTag = tag('video', {autoplay: 'autoplay', controls: 'false'}, []);
+                    var a = tag(
+                        'div',
+                        {},
+                        [
+                        videoTag,
+                        tag('div', {}, [server.clientUsername])
+                        ]
+                    );
+                    grid.handles.container.appendChild(a);
+                    users[server.clientID] = {
+                        container: a
+                    };
+                    console.log(navigator.mediaDevices.getSupportedConstraints());
+
+                    self.activateMediaDevices();
+                    break;
+
+                    /*
+                    case "username":
+                    text = "<b>User <em>" + msg.name + "</em> signed in at " + timeStr + "</b><br>";
+                    break;
+
+                    case "message":
+                    text = "(" + timeStr + ") <b>" + msg.name + "</b>: " + msg.text + "<br>";
+                    break;
+
+                    case "rejectusername":
+                    myUsername = msg.name;
+                    text = "<b>Your username has been set to <em>" + myUsername +
+                    "</em> because the name you chose is in use.</b><br>";
+                    break;
+                    */
+
+                case "userlist":
+                    grid.users(msg.users);
+                    break;
+
+                // Signaling messages: these messages are used to trade WebRTC
+                // signaling information during negotiations leading up to a video
+                // call.
+
+                case "video-offer": // Remote wants to connect
+                    users[msg.source].handleOffer(msg)
+                    break;
+
+                case "video-answer":  // Callee has answered our offer
+                    users[msg.source].handleAnswer(msg);
+                    break;
+
+                case "new-ice-candidate": // A new ICE candidate has been received
+                    users[msg.source].handleIceCandidate(msg);
+                    break;
+
+                case "hang-up": // The other peer has hung up the call
+                    console.log("*** Received hang up notification from other peer");
+                    users[msg.from].close();
+                    break;
+
+                // Unknown message; output to console for debugging.
+
+                default:
+                    console.log("Unknown message received:");
+                    console.log(msg);
+            }
+        };
+
+        self.connection = serverConnection;
+    },
+    send: function(msg) {
+        var self = this;
+        var msgJSON = JSON.stringify(msg);
+        self.connection.send(msgJSON);
+    },
+
+    getMediaConstraints: function() {
+        var mediaConstraints = {
+            audio: true, // We want an audio track
+            //video: false // Let's default to no video at the start
+            video: {
+                height: { min: 240, ideal: 240, max: 720 },
+                frameRate: { min: 2, ideal: 10, max: 30 }
+            }
+        };
+        // Check localStorage
+        var videoDeviceId = localStorage.getItem('videoInput');
+        var videoHeight = localStorage.getItem('videoHeight');
+        var frameRate = localStorage.getItem('frameRate');
+
+        var audioDeviceId = localStorage.getItem('audioInput');
+
+        if (videoDeviceId == 'none') {
+            mediaConstraints['video'] = false;
+        } else {
+            if (videoDeviceId == null) {
+            } else if (videoDeviceId != 'default') {
+                mediaConstraints['video']['deviceId'] = videoDeviceId;
+            }
+
+            if (videoHeight) {
+                 mediaConstraints['video']['height'] = videoHeight;
+            }
+            if (frameRate) {
+                 mediaConstraints['video']['frameRate'] = frameRate;
+            }
+        }
+
+        if (audioDeviceId == 'none') {
+        } else {
+            if (audioDeviceId != 'default') {
+                mediaConstraints['audio']['deviceId'] = videoDeviceId;
+            }
+        }
+        return mediaConstraints;
+    },
+
+    activateMediaDevices: function() {
+        var self = this;
+        var constraints = self.getMediaConstraints();
+        console.log(constraints);
+        navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+            // keep handle to our video/camera stream
+            self.stream = stream;
+            stream.getTracks().forEach(function(track) {
+                if (track.getCapabilities) console.log(track.getCapabilities());
+                // Prints constraints currently in use
+                //console.log(track.getConstraints());
+            });
+            self.videoTag.srcObject = new MediaStream(stream.getVideoTracks());
+            self.videoTag.onloadedmetadata = function() {
+                self.videoTag.play();
+            };
+
+            self.handleDeviceChange();
+        })
+        .catch(function(err) {
+            alert('Could not get media device. Check console.');
+            console.log(err.name + ": " + err.message);
+        });
+    },
+
+    handleDeviceChange: function() {
+        var self = this;
+
+        // List cameras and microphones.
+        navigator.mediaDevices.enumerateDevices().then(function(devices) {
+            var videoInput = localStorage.getItem('videoInput');
+            var audioInput = localStorage.getItem('audioInput');
+            var deviceTags = {
+                'videoinput': [
+                    tag('option', {value: 'default'}, ['Default Camera']),
+                    tag('option', {value: 'none'}, ['No Camera'])
+                ],
+                'audioinput': [
+                    tag('option', {value: 'default'}, ['Default Audio Input'])
+                ]
+            };
+            devices.forEach(function(device) {
+                if (device.kind in deviceTags) {
+                    var attributes = {value: device.deviceId};
+                    if (device.kind == 'videoinput') {
+                        if (device.deviceId == videoInput) {
+                            attributes['selected'] = 'selected';
+                        }
+                    } else {
+                        if (device.deviceId == audioInput) {
+                            attributes['selected'] = 'selected';
+                        }
+                    }
+                    deviceTags[ device.kind ].push(
+                        tag('option', attributes, [device.label])
+                    );
+                }
+            });
+            drawChildren(nav.handles.audioInput, deviceTags['audioinput']);
+            drawChildren(nav.handles.videoInput, deviceTags['videoinput']);
+        })
+        .catch(function(err) {
+            alert('Could not enumerate media devices. Check console.');
+            console.log(err.name + ": " + err.message);
+        });
+    }
+};
+
+
+server.init();
+
+// Create the RTCPeerConnection which knows how to talk to our
+// selected STUN/TURN server and then uses getUserMedia() to find
+// our camera and microphone and add that stream to the connection for
+// use in our video call. Then we configure event handlers to get
+// needed notifications on the call.
+
+// async?
+var createPeerConnection = function(source, target, username) {
+
+    // Create an RTCPeerConnection which knows to use our chosen
+    // STUN server.
+
+    var peer = {
+        target: target,
+        username: username,
+        connection: null,
+        container: null,
+        stream: null,
+        videoTag: null,
+        closed: false,
+        deferNegotiationOnce: false,
+        init: function() {
+            var self = this;
+            var videoTag = tag('video', {autoplay: 'autoplay', controls: 'false'}, []);
+            var a = tag(
+                'div',
+                {},
+                [
+                    videoTag,
+                    tag('div', {}, [self.username])
+                ]
+            );
+            // Trying canplay, instead of loadedmetadata (like i've seen in examples)
+            videoTag.onloadedmetadata = function() {
+                console.log('onloadedmetadata');
+            };
+            // hopefully the autoplay attribute will take care of this and we can remove
+            videoTag.oncanplay = function() {
+                console.log('oncanplay');
+                videoTag.play()
+            };
+            self.stream = new MediaStream();
+            videoTag.srcObject = self.stream;
+            self.videoTag = videoTag;
+            self.container = a;
+
+            console.log('Preparing connection to ' + self.target);
+            var rtcConfig = {
+                //sdpSemantics: 'plan-b',
+                iceServers: [     // Information about ICE servers - Use your own!
+                    {
+                        urls: 'turn:' + server.hostname, // A TURN server
+                        username: config.turnUsername,
+                        credential: config.turnPassword,
+                        credentialType: 'password'
+                    }
+                ]
+            };
+        },
+        connect: function() {
+            var self = this;
+            var myPeerConnection = self.connection = new RTCPeerConnection(rtcConfig);
+
+            // Forward icecandidate events through signaling server
+            myPeerConnection.onicecandidate = function(event) {
+                if (event.candidate) {
+                    self.log('Sending new-ice-candidate event to ' + self.target);
+                    server.send({
+                        type: "new-ice-candidate",
+                        source: server.clientID,
+                        target: self.target,
+                        candidate: event.candidate
+                    });
+                } else {
+                    self.log('WTF. ice candidate event without candidate');
+                }
+            };
+
+            myPeerConnection.oniceconnectionstatechange = function(event) {
+                self.log('ICE State changed to ' + self.connection.iceConnectionState);
+
+                switch(self.connection.iceConnectionState) {
+                    case "closed":
+                    case "failed":
+                    case "disconnected":
+                        self.close();
+                        break;
+                }
+            };
+
+            // Handle the |icegatheringstatechange| event. This lets us know what the
+            // ICE engine is currently working on: "new" means no networking has happened
+            // yet, "gathering" means the ICE engine is currently gathering candidates,
+            // and "complete" means gathering is complete. Note that the engine can
+            // alternate between "gathering" and "complete" repeatedly as needs and
+            // circumstances change.
+            //
+            // We don't need to do anything when this happens, but we log it to the
+            // console so you can see what's going on when playing with the sample.
+            myPeerConnection.onicegatheringstatechange = function(event) {
+                self.log('ICE Gathering state changed to ' + self.connection.iceGatheringState);
+            };
+
+            // Set up a |signalingstatechange| event handler. This will detect when
+            // the signaling connection is closed.
+            //
+            // NOTE: This will actually move to the new RTCPeerConnectionState enum
+            // returned in the property RTCPeerConnection.connectionState when
+            // browsers catch up with the latest version of the specification!
+            myPeerConnection.onsignalingstatechange = function(event) {
+                self.log('Signaling state changed to ' + self.connection.signalingState);
+                switch(self.connection.signalingState) {
+                    case "stable":
+                        if (self.pendingNegotiation) {
+                            self.handleNegotiation();
+                        }
+                        break;
+                    case "closed":
+                        self.close();
+                        break;
+                }
+            };
+            
+            // Called by the WebRTC layer to let us know when it's time to
+            // begin, resume, or restart SDP negotiation.
+            myPeerConnection.onnegotiationneeded = function () {
+                self.handleNegotiation();
+            };
+
+            // Called by the WebRTC layer when events occur on the media tracks
+            // on our WebRTC call. This includes when streams are added to and
+            // removed from the call.
+            //
+            // track events include the following fields:
+            //
+            // RTCRtpReceiver       receiver
+            // MediaStreamTrack     track
+            // MediaStream[]        streams
+            // RTCRtpTransceiver    transceiver
+            //
+            // In our case, we're just taking the first stream found and attaching
+            // it to the <video> element for incoming media.
+            myPeerConnection.ontrack = function(event) {
+                console.log('Connection with ' + self.target + '. Track event');
+                console.log(event.track);
+
+                //self.stream = event.streams[0];
+                //self.videoTag.srcObject = event.streams[0];
+                self.videoTag.srcObject.addTrack(event.track);
+            };
+
+            self.addTracks();
+        },
+        addTracks: function() {
+            var self = this;
+            console.log('Connection with ' + self.target + '. Adding tracks');
+            // TODO: don't know when to do this
+            //navigator.mediaDevices.getUserMedia(mediaConstraints).then(function(stream) {
+                // Re-use tracks from webcam MediaStream we're using in our preview pane
+                try {
+                    //var stream2 = server.stream.clone();
+                    server.stream.getTracks().forEach(function(track) {
+                        // need to pass a stream, so we can attach to video tag srcObject on the remote side
+                        // but this doesn't seem to work either
+                        self.connection.addTransceiver(track); //, {streams: [server.stream]})
+                    });
+                } catch(err) {
+                    console.log(err);
+                }
+            /*
+            })
+            .catch(function(err) {
+                alert('Could not get media device. Check console.');
+                console.log(err.name + ": " + err.message);
+            });
+            */
+
+        },
+
+        close: function() {
+            var self = this;
+            if (self.connection) {
+                console.log('Connection with ' + self.target + '. Closing connection');
+
+                var myPeerConnection = self.connection;
+
+                // Disconnect all our event listeners; we don't want stray events
+                // to interfere with the hangup while it's ongoing.
+                myPeerConnection.ontrack = null;
+                myPeerConnection.onnicecandidate = null;
+                myPeerConnection.oniceconnectionstatechange = null;
+                myPeerConnection.onsignalingstatechange = null;
+                myPeerConnection.onicegatheringstatechange = null;
+                myPeerConnection.onnotificationneeded = null;
+
+                // Stop all transceivers on the connection
+                myPeerConnection.getTransceivers().forEach(function(t) {
+                    // Chrome doesn't have stop()
+                    if (t.stop) t.stop();
+                });
+                self.connection = null;
+            }
+
+            // Stop the webcam preview as well by pausing the <video>
+            // element, then stopping each of the getUserMedia() tracks
+            // on it.
+
+            if (self.videoTag.srcObject) {
+                self.videoTag.pause();
+                self.videoTag.srcObject.getTracks().forEach(track => {
+                    track.stop();
+                });
+            }
+
+            // Close the peer connection
+            myPeerConnection.close();
+            self.closed = true;
+        },
+
+        handleNegotiation: async function() {
+            var self = this;
+            self.log('Negotiation needed');
+
+            if (!self.canNegotiate()) {
+                self.log('Queueing up negotiation');
+                self.pendingNegotiation = true;
+                return;
+            }
+
+            try {
+                // If the connection hasn't yet achieved the "stable" state,
+                // return to the caller. Another negotiationneeded event
+                // will be fired when the state stabilizes.
+                if (self.connection.signalingState != "stable") {
+                    self.log('Not stable yet, postponing ...');
+                    return;
+                }
+
+/*
+                // Skip if we're in a pending state from a remote offer
+                if (self.connection.pendingRemoteDescription) {
+                    console.log('Connection with ' + self.target + '. Already in the middle of remote-initiated negotation. Doing nothing for now.');
+                    return;
+                }
+*/
+
+                // Moved this from above stable check above
+                self.log('Creating offer.');
+                const offer = await self.connection.createOffer();
+
+                // Establish the offer as the local peer's current
+                // description.
+
+                self.log('Setting local description to the offer');
+                await self.connection.setLocalDescription(offer);
+
+                // Send the offer to the remote peer.
+
+                self.log('Sending offer.');
+                server.send({
+                    source: server.clientID,
+                    target: self.target,
+                    type: "video-offer",
+                    sdp: offer 
+                });
+                self.pendingNegotiation = false;
+            } catch(err) {
+                self.log('Negotation error: ');
+                self.log(err);
+            };
+        },
+
+        // TODO: rename this. it's confusing
+        handleOffer: async function(msg) {
+            var self = this;
+            console.log('Connection with ' + self.target + '. Received offer');
+            if (!self.canHandleOffer()) {
+                self.log('Bailing on offer');
+                return;
+            }
+
+            // We need to set the remote description to the received SDP offer
+            // so that our local WebRTC layer knows how to talk to the caller.
+            var desc = new RTCSessionDescription(msg.sdp);
+
+            // If the connection isn't stable yet, wait for it...
+            // TODO: this logic strange ... verify that it's correct
+            if (self.connection.signalingState != "stable") {
+                console.log('Connection with ' + self.target + '. Signaling state not stable, triggering rollback');
+
+                // Set the local and remove descriptions for rollback; don't proceed
+                // until both return.
+                await Promise.all([
+                    self.connection.setLocalDescription({type: "rollback"}),
+                    self.connection.setRemoteDescription(desc)
+                ]);
+                return;
+            } else {
+                console.log('Connection with ' + self.target + '. Setting remote description');
+                await self.connection.setRemoteDescription(desc);
+            }
+            // add tracks to continue with the negotiation
+            self.addTracks();
+
+            console.log('Connection with ' + self.target + '. Creating and sending answer');
+
+            await self.connection.setLocalDescription(await self.connection.createAnswer());
+
+            server.send({
+                source: server.clientID,
+                target: self.target,
+                type: "video-answer",
+                sdp: self.connection.localDescription
+            });
+
+        },
+
+        handleAnswer: function(msg) {
+            var self = this;
+            console.log('Connection with ' + self.target + '. Received answer');
+            if (!self.canHandleAnswer()) {
+                self.log('Bailing on answer');
+                return;
+            }
+
+            // Configure the remote description, which is the SDP payload
+            // in our "video-answer" message.
+
+            var desc = new RTCSessionDescription(msg.sdp);
+            self.connection.setRemoteDescription(desc).catch(function(err) {
+                console.log(err);
+            });
+        },
+        handleIceCandidate: async function(msg) {
+            var self = this;
+            var candidate = new RTCIceCandidate(msg.candidate);
+            console.log('Connection with ' + self.target + '. Ice candidate');
+            //console.log("*** Adding received ICE candidate: " + JSON.stringify(candidate));
+            try {
+                await self.connection.addIceCandidate(candidate)
+            } catch(err) {
+                console.log(err);
+            }
+        },
+
+        log: function(msg) {
+        var self = this;
+            console.log('Connection with ' + self.target + '. ' + msg);
+        },
+
+        // State checking stuff
+        canHandleOffer: function() {
+            var self = this;
+            if (self.connection.signalingState == 'stable') {
+                return true;
+            }
+            switch (self.connection.signalingState) {
+                case 'stable':
+                    self.log('State is stable, can handle offer');
+                    return true;
+                    break;
+                case 'have-local-offer':
+                    self.log('We have-local-offer, cannot accept offer');
+                    break;
+                case 'have-remote-offer':
+                    self.log('We have-remote-offer, cannot accept offer');
+                    break;
+                case 'have-local-pranswer':
+                    self.log('We have-local-pranswer (sent provisional answer to remote offer), cannot accept offer');
+                    break;
+                case 'have-remote-pranswer':
+                    self.log('We have-remote-pranswer (recived provisional answer to our offer), cannot accept offer');
+                    break;
+                default:
+                    self.log('Unexpected status ' + self.connection.signalingState);
+            }
+            return false;
+        },
+        canHandleAnswer: function() {
+            var self = this;
+            switch (self.connection.signalingState) {
+                case 'stable':
+                    self.log('State is stable, no record of previous offer');
+                    break;
+                case 'have-local-offer':
+                    self.log('We have-local-offer, can accept answer');
+                    return true;
+                    break;
+                case 'have-remote-offer':
+                    self.log('We have-remote-offer, cannot accept answer');
+                    break;
+                case 'have-local-pranswer':
+                    self.log('We have-local-pranswer (sent provisional answer to remote offer), cannot accept answer');
+                    break;
+                case 'have-remote-pranswer':
+                    self.log('We have-remote-pranswer (recived provisional answer to our offer), cannot accept answer');
+                    break;
+                default:
+                    self.log('Unexpected status ' + self.connection.signalingState);
+            }
+            return false;
+        },
+        canNegotiate: function() {
+            var self = this;
+            switch (self.connection.signalingState) {
+                case 'stable':
+                    return true;
+                    break;
+                case 'have-local-offer':
+                    self.log('We already have-local-offer, not starting new negotiation');
+                    break;
+                case 'have-remote-offer':
+                    self.log('We have-remote-offer, not starting new negotation');
+                    break;
+                case 'have-local-pranswer':
+                    self.log('We have-local-pranswer (sent provisional answer to remote offer), not starting new negotation');
+                    break;
+                case 'have-remote-pranswer':
+                    self.log('We have-remote-pranswer (recived provisional answer to our offer), not starting negotation');
+                    break;
+                default:
+                    self.log('Unexpected status ' + self.connection.signalingState);
+            }
+            return false;
+        }
+    };
+    peer.init();
+    return peer;
+};
+
+
+</script>
+</body>
+</html>
+
+
+
